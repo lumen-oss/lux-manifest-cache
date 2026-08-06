@@ -10,8 +10,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +33,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: packages/
-          key: packages-v2-${{ steps.manifest.outputs.hash }}
+          key: packages-v4-flat-${{ steps.manifest.outputs.hash }}
 
       - name: Build cache
         if: steps.cache.outputs.cache-hit != 'true'
@@ -46,12 +44,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: packages/
-          key: packages-v2-${{ steps.manifest.outputs.hash }}
+          key: packages-v4-flat-${{ steps.manifest.outputs.hash }}
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Deploy to VPS
+        uses: Burnett01/rsync-deployments@v8
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./packages
-          force_orphan: true
-          allow_empty_commit: true
+          switches: -avz --delete
+          path: packages/
+          remote_path: /srv/lux-manifest-cache/packages/
+          remote_host: beta.luanox.org
+          remote_user: manifest-ci
+          remote_key: ${{ secrets.LUX_MANIFEST_CACHE_DEPLOY_KEY }}
