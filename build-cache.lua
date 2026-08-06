@@ -68,7 +68,10 @@ local function main()
                 goto next_version
             end
 
-            local output_file = PACKAGES_DIR .. "/" .. hash .. ".json"
+            local prefix = hash:sub(1, 2)
+            local output_dir = PACKAGES_DIR .. "/" .. prefix
+            local output_file = output_dir .. "/" .. hash .. ".json"
+            ensure_dir(output_dir)
 
             -- skip if already exists
             local f = io.open(output_file, "r")
