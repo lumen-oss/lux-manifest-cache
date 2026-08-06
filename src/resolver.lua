@@ -23,10 +23,6 @@ function resolver.parse_dep_string(dep_str)
     local constraints = {}
     rest = rest:match("^%s*(.*)$") or ""
 
-    if rest == "" then
-        constraints[1] = { op = "==", version = version.parse("0") }
-    end
-
     while #rest > 0 do
         local op, ver_str, remaining = rest:match("^%s*([<>=~!]*)%s*([%w%.%_%-]+)[%s,]*(.*)$")
         if not op or op == "" then
