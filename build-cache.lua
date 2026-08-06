@@ -52,15 +52,15 @@ local function main()
     for pkg_name, pkg_versions in pairs(packages) do
         total_packages = total_packages + 1
 
-        -- determine latest version for this package
-        local latest_vs = version.find_latest(pkg_versions)
-        if not latest_vs then
-            goto next_package
-        end
+        local sorted = version.sort_latest(pkg_versions)
+        if #sorted == 0 then goto next_package end
 
+        local latest_vs = sorted[1]
         local pkg_latest_file = nil
 
-        for vs_str, _ in pairs(pkg_versions) do
+        -- process the 2 most recent versions only
+        for i = 1, math.min(2, #sorted) do
+            local vs_str = sorted[i]
             local hash = sha256(pkg_name .. "@" .. vs_str)
             if not hash then
                 io.stderr:write(string.format("ERROR: hash failed for %s@%s\n", pkg_name, vs_str))
