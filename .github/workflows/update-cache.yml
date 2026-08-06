@@ -1,0 +1,57 @@
+name: Update Manifest Cache
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */2 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Clone moonrocks mirror
+        run: git clone --depth 1 https://github.com/rocks-moonscript-org/moonrocks-mirror mirror
+
+      - name: Fetch luarocks.org manifest
+        run: curl -fsSL -o manifest.json https://luarocks.org/manifest.json
+
+      - name: Compute cache key
+        id: manifest
+        run: |
+          echo "hash=$(sha256sum manifest.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Restore package cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/
+          key: packages-v2-${{ steps.manifest.outputs.hash }}
+
+      - name: Build cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: nix develop --command lua build-cache.lua
+
+      - name: Save package cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/
+          key: packages-v2-${{ steps.manifest.outputs.hash }}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./packages
+          force_orphan: true
+          allow_empty_commit: true

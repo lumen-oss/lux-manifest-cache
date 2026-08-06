@@ -1,0 +1,8 @@
+# build artifacts
+packages/
+manifest.json
+mirror/
+result
+
+# nix
+.direnv/
