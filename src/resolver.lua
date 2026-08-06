@@ -130,6 +130,9 @@ function resolver.resolve_recursive(m, mirror_dir, name, version_str, visited, e
         local dep = resolver.parse_dep_string(ds)
         if not dep then goto continue end
 
+        -- lua and luarocks are language/platform deps, not packages in the manifest
+        if dep.name == "lua" or dep.name == "luarocks" then goto continue end
+
         local dep_version, dep_err = resolver.resolve_dep(dep, m)
         if not dep_version then
             if errors then
