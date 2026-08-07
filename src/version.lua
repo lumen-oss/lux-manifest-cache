@@ -86,6 +86,17 @@ function version.eq(a, b)
     return not version.compare(a, b) and not version.compare(b, a)
 end
 
+-- revision-agnostic equality: "1.0.2" == "1.0.2-1" is true
+function version.base_eq(a, b)
+    if type(a) == "string" then a = version.parse(a) end
+    if type(b) == "string" then b = version.parse(b) end
+    local max_len = math.max(#a, #b)
+    for i = 1, max_len do
+        if (a[i] or 0) ~= (b[i] or 0) then return false end
+    end
+    return true
+end
+
 function version.lte(a, b)
     return version.compare(a, b) or version.eq(a, b)
 end
@@ -129,9 +140,9 @@ function version.match_constraints(ver, constraints)
         local op = c.op
 
         if op == "==" or op == "=" or op == "" then
-            if not version.eq(ver, cv) then return false end
+            if not version.base_eq(ver, cv) then return false end
         elseif op == "~=" or op == "!=" then
-            if version.eq(ver, cv) then return false end
+            if version.base_eq(ver, cv) then return false end
         elseif op == "<" then
             if not version.lt(ver, cv) then return false end
         elseif op == ">" then
