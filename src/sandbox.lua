@@ -39,6 +39,13 @@ function sandbox.evaluate(text)
         return nil, "missing or invalid version"
     end
 
+    local escaped = text:gsub("'", "'\\''")
+    local f = io.popen("printf '%s' '" .. escaped .. "' | sha256sum 2>/dev/null")
+    if f then
+        spec.__hash = f:read("*a"):match("^(%x+)")
+        f:close()
+    end
+
     return spec
 end
 
