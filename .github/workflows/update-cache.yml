@@ -19,10 +19,11 @@ jobs:
 
       - name: Download moonrocks mirror
         run: |
+          sudo apt-get install -y pigz
           rm -rf mirror
           mkdir -p mirror
           curl -fsSL https://github.com/rocks-moonscript-org/moonrocks-mirror/archive/refs/heads/master.tar.gz \
-            | tar xz --strip-components=1 -C mirror/
+            | pigz -dc | tar x --strip-components=1 -C mirror/
 
       - name: Fetch luarocks.org manifest
         run: curl -fsSL -o manifest.json https://luarocks.org/manifest.json
