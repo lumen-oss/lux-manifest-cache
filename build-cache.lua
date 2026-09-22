@@ -5,6 +5,7 @@ local resolver = require("src.resolver")
 
 local PACKAGES_DIR = "packages"
 local LATEST_DIR = PACKAGES_DIR .. "/latest"
+local VERSIONS_DIR = PACKAGES_DIR .. "/versions"
 local MIRROR_DIR = "mirror"
 
 local function sha256(s)
@@ -33,6 +34,7 @@ end
 local function main()
     ensure_dir(PACKAGES_DIR)
     ensure_dir(LATEST_DIR)
+    ensure_dir(VERSIONS_DIR)
 
     -- load manifest.json (downloaded separately by CI, or fall back to direct fetch)
     local m, err = manifest.load_json("manifest.json")
@@ -54,6 +56,8 @@ local function main()
 
         local sorted = version.sort_latest(pkg_versions)
         if #sorted == 0 then goto next_package end
+
+        write_json(VERSIONS_DIR .. "/" .. pkg_name .. ".json", sorted)
 
         local latest_vs = sorted[1]
         local pkg_latest_file = nil

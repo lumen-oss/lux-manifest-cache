@@ -119,6 +119,9 @@ function resolver.resolve_recursive(m, mirror_dir, name, version_str, visited, e
         return {}
     end
 
+    spec.available_types = manifest.get_arch_types(m, name, version_str)
+    spec.rockspec_raw = rockspec_str
+
     local result = { spec }
     local dep_strings = resolver.get_dep_strings(spec)
 

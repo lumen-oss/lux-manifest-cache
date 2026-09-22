@@ -43,6 +43,17 @@ function manifest.get_versions(m, package_name)
     return repo[package_name] or {}
 end
 
+-- get the rock types (arch strings) available for a single package version
+function manifest.get_arch_types(m, package_name, version_str)
+    local types = {}
+    for _, entry in ipairs(manifest.get_versions(m, package_name)[version_str] or {}) do
+        if entry.arch then
+            table.insert(types, entry.arch)
+        end
+    end
+    return types
+end
+
 -- read a rockspec from the moonrocks-mirror cloned directory
 -- mirror has flat files named like "package-version-revision.rockspec"
 function manifest.read_rockspec(mirror_dir, name, version_str)
