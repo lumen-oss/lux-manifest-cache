@@ -65,12 +65,13 @@ function resolver.resolve_dep(dep, m)
 end
 
 -- get dependencies from a rockspec table
--- returns list of raw dependency strings (from dependencies, build_dependencies, test_dependencies)
+-- returns list of { str = <raw dep string>, type = "runtime"|"build"|"test" }
+-- dependencies, build_dependencies and test_dependencies are kept distinct
 function resolver.get_dep_strings(spec)
     local deps = {}
     local seen = {}
 
-    local function add(dep_list)
+    local function add(dep_list, dep_type)
         if type(dep_list) ~= "table" then return end
         for k, v in pairs(dep_list) do
             if type(v) == "string" then
@@ -83,75 +84,108 @@ function resolver.get_dep_strings(spec)
                 end
                 if not seen[dep_str] then
                     seen[dep_str] = true
-                    table.insert(deps, dep_str)
+                    table.insert(deps, { str = dep_str, type = dep_type })
                 end
             elseif type(v) == "table" then
-                add(v)
+                add(v, dep_type)
             end
         end
     end
 
-    add(spec.dependencies)
-    add(spec.build_dependencies)
-    add(spec.test_dependencies)
+    add(spec.dependencies, "runtime")
+    add(spec.build_dependencies, "build")
+    add(spec.test_dependencies, "test")
 
     return deps
 end
 
+-- how optional a dependency kind is. "root" is the strongest (always needed),
+-- test is the most optional. When combining a parent's requirement with an
+-- edge, the more optional of the two wins:
+--   runtime -> build  == build  (build-time need of a runtime dep)
+--   build   -> runtime == build (runtime dep of a build dep is only built)
+--   test    -> runtime == test  (runtime dep of a test-only dep is test-only)
+local KIND_RANK = { root = 0, runtime = 1, build = 2, test = 3 }
+
+local function more_optional(a, b)
+    if (KIND_RANK[a] or 0) >= (KIND_RANK[b] or 0) then return a end
+    return b
+end
+
 -- recursively resolve a package and all its dependencies
 -- returns array of rockspec tables: [pkg_spec, dep1_spec, dep2_spec, ...]
--- visited maps "name@version" -> true to detect cycles
+-- the first entry is the requested package (dependency_type = "root");
+-- every other entry carries dependency_type = "runtime"|"build"|"test"
+-- reflecting the strongest requirement on it from the root
 -- errors maps "name@version" -> error message for unresolvable deps
-function resolver.resolve_recursive(m, mirror_dir, name, version_str, visited, errors)
-    local key = name .. "@" .. version_str
-    if visited[key] then return {} end
-    visited[key] = true
+function resolver.resolve_recursive(m, mirror_dir, name, version_str, errors)
+    local specs = {}
+    local index = {}
+    local kinds = {}
 
-    local rockspec_str, err = manifest.get_rockspec(mirror_dir, name, version_str)
-    if not rockspec_str then
-        errors[key] = "rockspec not found: " .. tostring(err)
-        return {}
-    end
+    local queue = { { name = name, version = version_str, kind = "root" } }
+    local head = 1
 
-    local spec, eval_err = sandbox.evaluate(rockspec_str)
-    if not spec then
-        errors[key] = "eval failed: " .. tostring(eval_err)
-        return {}
-    end
+    while head <= #queue do
+        local item = queue[head]
+        head = head + 1
 
-    spec.available_types = manifest.get_arch_types(m, name, version_str)
-    spec.rockspec_raw = rockspec_str
+        local key = item.name .. "@" .. item.version
+        -- weaker (or equal) requirement than a path we already took: skip
+        if kinds[key] and KIND_RANK[item.kind] >= KIND_RANK[kinds[key]] then
+            goto continue
+        end
+        kinds[key] = item.kind
 
-    local result = { spec }
-    local dep_strings = resolver.get_dep_strings(spec)
-
-    for _, ds in ipairs(dep_strings) do
-        local dep = resolver.parse_dep_string(ds)
-        if not dep then goto continue end
-
-        -- lua and luarocks are language/platform deps, not packages in the manifest
-        if dep.name == "lua" or dep.name == "luarocks" then goto continue end
-
-        local dep_version, dep_err = resolver.resolve_dep(dep, m)
-        if not dep_version then
-            if errors then
-                errors[dep.name] = tostring(dep_err)
-            end
+        local rockspec_str, rs_err = manifest.get_rockspec(mirror_dir, item.name, item.version)
+        if not rockspec_str then
+            errors[key] = "rockspec not found: " .. tostring(rs_err)
             goto continue
         end
 
-        local transitive = resolver.resolve_recursive(
-            m, mirror_dir, dep.name, dep_version, visited, errors
-        )
+        local spec, eval_err = sandbox.evaluate(rockspec_str)
+        if not spec then
+            errors[key] = "eval failed: " .. tostring(eval_err)
+            goto continue
+        end
 
-        for _, tspec in ipairs(transitive) do
-            table.insert(result, tspec)
+        spec.available_types = manifest.get_arch_types(m, item.name, item.version)
+        spec.rockspec_raw = rockspec_str
+        spec.dependency_type = item.kind
+
+        if not index[key] then
+            table.insert(specs, spec)
+            index[key] = #specs
+        end
+
+        for _, entry in ipairs(resolver.get_dep_strings(spec)) do
+            local dep = resolver.parse_dep_string(entry.str)
+            if not dep then goto next_dep end
+
+            -- lua and luarocks are language/platform deps, not packages in the manifest
+            if dep.name == "lua" or dep.name == "luarocks" then goto next_dep end
+
+            local dep_version, dep_err = resolver.resolve_dep(dep, m)
+            if not dep_version then
+                if errors then
+                    errors[dep.name] = tostring(dep_err)
+                end
+                goto next_dep
+            end
+
+            table.insert(queue, {
+                name = dep.name,
+                version = dep_version,
+                kind = more_optional(item.kind, entry.type),
+            })
+
+            ::next_dep::
         end
 
         ::continue::
     end
 
-    return result
+    return specs
 end
 
 return resolver

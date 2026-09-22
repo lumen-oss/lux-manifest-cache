@@ -25,20 +25,23 @@ jobs:
           curl -fsSL https://github.com/rocks-moonscript-org/moonrocks-mirror/archive/refs/heads/master.tar.gz \
             | pigz -dc | pv | tar x --strip-components=1 -C mirror/
 
-      - name: Fetch luarocks.org manifest
-        run: curl -fsSL -o manifest.json https://luarocks.org/manifest.json
+      - name: Fetch luarocks.org manifests
+        run: |
+          for v in 5.1 5.2 5.3 5.4 5.5; do
+            curl -fsSL -o "manifest-$v.json" "https://luarocks.org/manifest-$v.json"
+          done
 
       - name: Compute cache key
         id: manifest
         run: |
-          echo "hash=$(sha256sum manifest.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "hash=$(cat manifest-*.json | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
       - name: Restore package cache
         id: cache
         uses: actions/cache/restore@v4
         with:
           path: packages/
-          key: packages-v6-flat-${{ steps.manifest.outputs.hash }}
+          key: packages-v7-flat-${{ steps.manifest.outputs.hash }}
 
       - name: Build cache
         if: steps.cache.outputs.cache-hit != 'true'
@@ -49,7 +52,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: packages/
-          key: packages-v6-flat-${{ steps.manifest.outputs.hash }}
+          key: packages-v7-flat-${{ steps.manifest.outputs.hash }}
 
       - name: Deploy to VPS
         uses: Burnett01/rsync-deployments@v8

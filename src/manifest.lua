@@ -23,11 +23,12 @@ function manifest.load_json(path)
     return cjson.decode(content)
 end
 
--- fetch manifest.json from luarocks.org
-function manifest.fetch_json()
-    local body = http_get(LUAROCKS_BASE .. "/manifest.json")
+-- fetch a manifest from luarocks.org (defaults to the combined manifest.json)
+function manifest.fetch_json(name)
+    name = name or "manifest.json"
+    local body = http_get(LUAROCKS_BASE .. "/" .. name)
     if not body then
-        return nil, "failed to fetch manifest.json"
+        return nil, "failed to fetch " .. name
     end
     return cjson.decode(body)
 end

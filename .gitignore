@@ -1,6 +1,7 @@
 # build artifacts
 packages/
 manifest.json
+manifest-*.json
 mirror/
 result
 

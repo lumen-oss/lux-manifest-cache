@@ -4,9 +4,11 @@ local manifest = require("src.manifest")
 local resolver = require("src.resolver")
 
 local PACKAGES_DIR = "packages"
-local LATEST_DIR = PACKAGES_DIR .. "/latest"
-local VERSIONS_DIR = PACKAGES_DIR .. "/versions"
 local MIRROR_DIR = "mirror"
+local FORMAT = 1
+
+-- one cache tree per luarocks manifest (one per supported Lua version)
+local MANIFEST_VERSIONS = { "5.1", "5.2", "5.3", "5.4", "5.5" }
 
 local function sha256(s)
     local escaped = s:gsub("'", "'\\''")
@@ -31,19 +33,24 @@ local function write_json(path, data)
     f:close()
 end
 
-local function main()
-    ensure_dir(PACKAGES_DIR)
-    ensure_dir(LATEST_DIR)
-    ensure_dir(VERSIONS_DIR)
+-- build packages/<lua_version>/{<hash>.json,latest/<name>.json,versions/<name>.json}
+local function build_for_manifest(lua_version)
+    local dir = PACKAGES_DIR .. "/" .. lua_version
+    local latest_dir = dir .. "/latest"
+    local versions_dir = dir .. "/versions"
+    ensure_dir(dir)
+    ensure_dir(latest_dir)
+    ensure_dir(versions_dir)
 
-    -- load manifest.json (downloaded separately by CI, or fall back to direct fetch)
-    local m, err = manifest.load_json("manifest.json")
+    -- manifest downloaded separately by CI, or fall back to direct fetch
+    local manifest_file = "manifest-" .. lua_version .. ".json"
+    local m, err = manifest.load_json(manifest_file)
     if not m then
-        m, err = manifest.fetch_json()
+        m, err = manifest.fetch_json(manifest_file)
     end
     if not m then
-        io.stderr:write("FATAL: cannot load manifest: " .. tostring(err) .. "\n")
-        os.exit(1)
+        io.stderr:write(string.format("FATAL: cannot load %s: %s\n", manifest_file, tostring(err)))
+        return 0, 0, 0
     end
 
     local packages = manifest.get_packages(m)
@@ -57,7 +64,10 @@ local function main()
         local sorted = version.sort_latest(pkg_versions)
         if #sorted == 0 then goto next_package end
 
-        write_json(VERSIONS_DIR .. "/" .. pkg_name .. ".json", sorted)
+        write_json(versions_dir .. "/" .. pkg_name .. ".json", {
+            format = FORMAT,
+            versions = sorted,
+        })
 
         local latest_vs = sorted[1]
         local pkg_latest_file = nil
@@ -72,7 +82,7 @@ local function main()
                 goto next_version
             end
 
-            local output_file = PACKAGES_DIR .. "/" .. hash .. ".json"
+            local output_file = dir .. "/" .. hash .. ".json"
 
             -- skip if already exists
             local f = io.open(output_file, "r")
@@ -93,9 +103,8 @@ local function main()
             end
 
             -- resolve with transitive deps
-            local visited = {}
             local errors = {}
-            local closure = resolver.resolve_recursive(m, MIRROR_DIR, pkg_name, vs_str, visited, errors)
+            local closure = resolver.resolve_recursive(m, MIRROR_DIR, pkg_name, vs_str, errors)
 
             for ek, em in pairs(errors) do
                 io.stderr:write(string.format("WARN: %s -> %s: %s\n", pkg_name .. "@" .. vs_str, ek, em))
@@ -107,7 +116,7 @@ local function main()
                 goto next_version
             end
 
-            write_json(output_file, closure)
+            write_json(output_file, { format = FORMAT, specs = closure })
             total_written = total_written + 1
 
             if vs_str == latest_vs then
@@ -118,14 +127,34 @@ local function main()
         end
 
         if pkg_latest_file then
-            local latest_path = LATEST_DIR .. "/" .. pkg_name .. ".json"
+            local latest_path = latest_dir .. "/" .. pkg_name .. ".json"
             os.execute("cp " .. string.format("%q", pkg_latest_file) .. " " .. string.format("%q", latest_path))
         end
 
         ::next_package::
     end
 
-    io.write(string.format("packages: %d | written: %d | errors: %d\n", total_packages, total_written, total_errors))
+    io.write(string.format("[%s] packages: %d | written: %d | errors: %d\n",
+        lua_version, total_packages, total_written, total_errors))
+    return total_packages, total_written, total_errors
+end
+
+local function main()
+    ensure_dir(PACKAGES_DIR)
+
+    local total_packages = 0
+    local total_written = 0
+    local total_errors = 0
+
+    for _, lua_version in ipairs(MANIFEST_VERSIONS) do
+        local p, w, e = build_for_manifest(lua_version)
+        total_packages = total_packages + p
+        total_written = total_written + w
+        total_errors = total_errors + e
+    end
+
+    io.write(string.format("total | packages: %d | written: %d | errors: %d\n",
+        total_packages, total_written, total_errors))
 end
 
 main()
